@@ -131,5 +131,6 @@
 
 ## Диаграмма первого приближения
 
-<img width="1554" height="657" alt="image" src="https://github.com/user-attachments/assets/bc786a53-e1ed-4af6-bc61-5773aade8679" />
+<img width="1548" height="651" alt="image" src="https://github.com/user-attachments/assets/947999db-34ad-4a90-b8cb-ac88e2c92c41" />
+
 
