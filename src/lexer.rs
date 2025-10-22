@@ -1,6 +1,6 @@
 /// Represents the state of quotation parsing.
 /// Weak quotes allow for interpolation, while strong quotes do not.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QuoteState {
     Weak,
     Strong,
@@ -17,10 +17,11 @@ impl From<char> for QuoteState {
 }
 
 /// Represents the different types of tokens that can be identified in the input.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     Text(String),
     QuotedText(String, QuoteState),
+    Pipe,
     Stdin,
     Stdout,
     Equal,
@@ -59,6 +60,10 @@ pub fn lex(input: &str) -> Vec<Token> {
             '=' => {
                 push_text_token(&mut tokens, &mut current_token);
                 tokens.push(Token::Equal);
+            }
+            '|' => {
+                push_text_token(&mut tokens, &mut current_token);
+                tokens.push(Token::Pipe);
             }
             _ => current_token.push(c),
         }
