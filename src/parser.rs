@@ -1,11 +1,21 @@
 use crate::lexer::Token;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
 #[derive(Debug)]
 pub struct CommandArgs {
     pub args: Vec<Token>,
     pub stdin: Option<Token>,
     pub stdout: Option<Token>,
+}
+
+impl CommandArgs {
+    pub fn new() -> Self {
+        Self {
+            args: Vec::new(),
+            stdin: None,
+            stdout: None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -30,74 +40,64 @@ fn to_builtin_type(text: &String) -> Option<BuiltinType> {
 
 fn push_token_to_cmd(cmd: &mut Command, token: Token) {
     match cmd {
-        Command::Builtin { io, .. } => {
+        Command::Builtin { io, .. } | Command::External { io, .. } => {
             io.args.push(token);
         },
-        Command::External { io, .. } => {
-            io.args.push(token);
-        },
-        Command::SetVariable { value } => {
-            *value = token;
-        },
+        _ => {}
     }
 }
 
 #[derive(Debug)]
 pub enum Command {
     Builtin { kind: BuiltinType, io: CommandArgs },
-    SetVariable { value: Token },
+    SetVariable { name: String, value: Token },
     External { name: String, io: CommandArgs },
 }
 
 pub fn parse(tokens: &[Token]) -> Result<Command> {
-    let mut cmds: Vec<Command> = Vec::new();
-    let mut cur_cmd: Option<usize> = None;
+    let mut cur_cmd: Option<Command> = None;
+    let mut stored_name: Option<String> = None;
+
     for token in tokens {
         match token {
             Token::Text(text) => {
                 if cur_cmd.is_none() {
-                    let command_type = match text.as_str() {
-                        "cat" | "echo" | "wc" | "pwd" | "exit" =>
-                            Command::Builtin {
-                                kind: to_builtin_type(text).unwrap(),
-                                io: CommandArgs {args: Vec::new(), stdin: None, stdout: None},
-                            },
-                        _ =>
-                            Command::External {
-                                name: text.to_string(),
-                                io: CommandArgs {args: Vec::new(), stdin: None, stdout: None},
-                            },
-                    };
-                    cmds.push(command_type);
-                    cur_cmd = Some(cmds.len() - 1);
-                } else {
-                    if let Some(idx) = cur_cmd {
-                        if let Some(cmd) = cmds.get_mut(idx) {
-                            push_token_to_cmd(cmd, token.clone());
+                    let cmd = if let Some(kind) = to_builtin_type(text) {
+                        Command::Builtin {
+                            kind,
+                            io: CommandArgs::new(),
                         }
-                    }
-                }
-            },
-            Token::QuotedText(_, _) => {
-                if let Some(idx) = cur_cmd {
-                    if let Some(cmd) = cmds.get_mut(idx) {
+                    } else {
+                        Command::External {
+                            name: text.to_string(),
+                            io: CommandArgs::new(),
+                        }
+                    };
+                    stored_name = Some(text.to_string());
+                    cur_cmd = Some(cmd);
+                } else {
+                    if let Some(cmd) = &mut cur_cmd {
                         push_token_to_cmd(cmd, token.clone());
                     }
                 }
-            },
-            Token::Stdin | Token::Stdout | Token::Equal => {
-                if let Some(idx) = cur_cmd {
-                    if let Some(cmd) = cmds.get_mut(idx) {
-                        push_token_to_cmd(cmd, token.clone());
-                    }
+            }
+            Token::QuotedText(text, _) => {
+                let name = stored_name.take()
+                    .ok_or_else(|| anyhow!("Variable name expected before quoted text"))?;
+
+                cur_cmd = Some(Command::SetVariable {
+                    name,
+                    value: Token::Text(text.to_string()),
+                });
+            }
+            Token::Stdin | Token::Stdout => {
+                if let Some(cmd) = &mut cur_cmd {
+                    push_token_to_cmd(cmd, token.clone());
                 }
-            },
-            Token::Pipe => {
-                cur_cmd = None;
-            },
-            _ => unimplemented!()
+            }
+            _ => {}
         }
     }
 
-    unimplemented!()
+    cur_cmd.ok_or_else(|| anyhow!("No commands found in input"))
 }

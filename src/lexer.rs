@@ -21,7 +21,6 @@ impl From<char> for QuoteState {
 pub enum Token {
     Text(String),
     QuotedText(String, QuoteState),
-    Pipe,
     Stdin,
     Stdout,
     Equal,
@@ -60,10 +59,6 @@ pub fn lex(input: &str) -> Vec<Token> {
             '=' => {
                 push_text_token(&mut tokens, &mut current_token);
                 tokens.push(Token::Equal);
-            }
-            '|' => {
-                push_text_token(&mut tokens, &mut current_token);
-                tokens.push(Token::Pipe);
             }
             _ => current_token.push(c),
         }
