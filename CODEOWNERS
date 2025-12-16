@@ -1,0 +1,24 @@
+# CODEOWNERS for term3 module
+# Lines starting with '#' are comments.
+# Each pattern is followed by one or more owners (GitHub usernames or team names).
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for the repository
+*      @fadyat @DenChika
+
+# Owners for specific top-level areas
+/cmd/cli/        @fadyat
+/shell/          @fadyat @DenChika
+/docs/           @fadyat @DenChika
+/.github/        @fadyat
+
+# Owners for important files
+/README.md       @fadyat @DenChika
+/LICENSE         @fadyat @DenChika
+/go.mod          @fadyat
+
+# Tests and CI - keep maintainers responsible for test and CI changes
+/shell/*.go      @fadyat @DenChika
+/.github/workflows/*  @fadyat
+
+# If you add more teams or maintainers, add them here (e.g. @org/team-name)

@@ -1,0 +1,70 @@
+# golangci-lint configuration for the project
+# Cleaned configuration: remove deprecated/inactivated linters and fix formatting.
+# See: https://golangci-lint.run/usage/configuration/
+version: 2
+
+run:
+    timeout: 5m
+    tests: true # run linters on *_test.go as well
+    modules-download-mode: readonly
+
+linters:
+    enable:
+        - govet
+        - staticcheck
+        - errcheck
+        - unused
+        - ineffassign
+        - gosimple
+        - revive
+        - gocyclo
+        - bodyclose
+        - gosec
+    disable:
+        - maligned # layout/padding linter sometimes noisy for small projects
+
+linters-settings:
+    # gocyclo: functions with complexity >= min-complexity will be reported
+    gocyclo:
+        min-complexity: 15
+
+    # errcheck: check for unchecked errors on type assertions as well
+    errcheck:
+        check-type-assertions: true
+        # Exclude common cases where ignoring the error is acceptable in tests/examples
+        exclude-functions:
+            - "fmt\\.Fprint.*"
+
+    # revive: keep generated headers ignored to reduce noise
+    revive:
+        ignore-generated-header: true
+        severity: warning
+
+issues:
+    # keep default excludes, but allow zero threshold for CI failures
+    exclude-use-default: false
+
+    # Exclude dirs/files from analysis
+    exclude-dirs:
+        - vendor
+        - third_party
+    exclude-files:
+        - ".*_generated.go"
+        - ".*\\.pb\\.go"
+
+    # Do not limit issues in CI (set to 0 means unlimited).
+    max-issues-per-linter: 0
+    max-same-issues: 0
+
+    # Pragmatic exclusions to reduce false positives for this project
+    exclude:
+        - "error return value not checked.*\\(close\\)" # common pattern when closing pipes
+        - "should have comment or be unexported" # avoid requiring comments for small internal symbols
+        - "SA1019:.*" # allow deprecated-symbol warnings to be reviewed manually
+
+# Optionally, enable per-path overrides (e.g. exclude heavy/stress tests from some linters)
+# path:
+#   'shell/edge_test.go':
+#     linters:
+#       disable:
+#         - gocyclo
