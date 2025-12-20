@@ -133,4 +133,11 @@
 
 <img width="1548" height="651" alt="image" src="https://github.com/user-attachments/assets/947999db-34ad-4a90-b8cb-ac88e2c92c41" />
 
-
+MainLoop:
+1. Обращается к Lexer, который разбивает строку на токены (tokenize), учитывая одинарные и двойные кавычки (handle_double_quotes, handle_single_quotes)
+2. Превращает токены в Pipeline при помощи Parser (parse)
+3. Pipeline в виде одной или нескольких команд выполняется Executor'ом, который
+    * Выполняет встроенные команды (execute_builtin)
+	* Выполняет внешние команды (execute_external)
+	* Выполняет пайплайн целиком (execute_pipeline)
+До выполнения Executor обращается к EnvironmentManager'у, который загружает переменные окружения из ОС и обновляет их (load_os_environment, expand_variables)
