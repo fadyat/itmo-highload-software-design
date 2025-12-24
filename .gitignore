@@ -4,9 +4,6 @@
 # JetBrains
 .idea
 
-# VS Code
-.vscode
-
 # Jupyter notebook
 .ipynb_checkpoints
 octave-workspace
