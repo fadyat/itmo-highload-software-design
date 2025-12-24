@@ -13,6 +13,7 @@ Supported builtins
 - `wc` — counts lines, words and bytes
 - `pwd` — print working directory
 - `exit` — request shell exit with optional code
+- `grep` — search files or stdin using regular expressions; supports flags `-w` (whole-word), `-i` (case-insensitive), and `-A` (print N lines after a match)
 
 Features
 
@@ -126,6 +127,15 @@ Documentation
 
 - `docs/design.md` contains an architectural overview and design notes.
 - Please keep `docs/` updated for significant design or API changes.
+
+Note about argument-parsing library choice
+
+- The `grep` builtin uses a dedicated command-line argument parsing library to correctly handle flags and their values (as required by the assignment). The chosen library is `github.com/jessevdk/go-flags`. It was selected because:
+    - it is lightweight and focused on argument parsing (no heavy CLI framework),
+    - it supports short and long options and parsing slices of arguments without requiring a full application context,
+    - it is well-tested and commonly used in Go projects,
+    - its license is permissive and compatible with this project's MIT license.
+- The README and `docs/` mention this choice and rationale so reviewers can see why a library was used instead of ad-hoc parsing.
 
 Releases & tags
 
