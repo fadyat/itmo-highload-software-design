@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/jessevdk/go-flags"
 )
 
 // Env manages environment variables for the shell.
@@ -213,12 +215,13 @@ func ExecutePipeline(p Pipeline, env *Env, in io.Reader, out io.Writer, errOut i
 			// Builtins handling (simplified)
 			if isBuiltin(name) {
 				code, err := runBuiltin(name, args, r, w, eout)
-				// If builtin requested exit, close this command's stdin pipe reader (if any)
+				// Close this command's stdin pipe reader (if any) when the builtin finishes,
 				// so upstream writers won't block trying to write into this now-unused pipe.
-				if err == ErrExitRequested {
-					if pr, ok := r.(*io.PipeReader); ok {
-						_ = pr.Close()
-					}
+				// Previously we only closed the reader for ErrExitRequested; close it
+				// unconditionally here to avoid deadlocks when the builtin returns early
+				// (for example, due to argument parse errors) and the upstream writer is still active.
+				if pr, ok := r.(*io.PipeReader); ok {
+					_ = pr.Close()
 				}
 				// close pipe writer if necessary
 				closeIfPipe(w)
@@ -264,7 +267,7 @@ func closeIfPipe(w io.Writer) {
 
 func isBuiltin(name string) bool {
 	switch name {
-	case "echo", "cat", "wc", "pwd", "exit":
+	case "echo", "cat", "wc", "pwd", "grep", "exit":
 		return true
 	}
 	return false
@@ -281,6 +284,8 @@ func runBuiltin(name string, args []string, r io.Reader, w io.Writer, eout io.Wr
 		return builtinWc(args, r, w, eout)
 	case "pwd":
 		return builtinPwd(r, w, eout)
+	case "grep":
+		return builtinGrep(args, r, w, eout)
 	case "exit":
 		code := 0
 		if len(args) > 0 {
@@ -490,5 +495,138 @@ func builtinPwd(stdin io.Reader, stdout io.Writer, stderr io.Writer) (int, error
 		return 1, err
 	}
 	_, _ = io.WriteString(stdout, dir+"\n")
+	return 0, nil
+}
+
+// builtinGrep implements a small subset of GNU grep features required by the assignment.
+// Supported flags:
+//
+//	-w : match whole words (word boundaries)
+//	-i : case-insensitive matching
+//	-A N : print N lines After a matching line (context)
+//
+// Pattern is a regular expression. If files are provided, each is searched; otherwise stdin is used.
+// When multiple files are searched, printed lines are prefixed with "filename:".
+func builtinGrep(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) (int, error) {
+	if stdout == nil {
+		stdout = os.Stdout
+	}
+	if stderr == nil {
+		stderr = os.Stderr
+	}
+
+	// Define options for go-flags parser.
+	var opts struct {
+		Word       bool `short:"w" long:"word" description:"match whole words only"`
+		IgnoreCase bool `short:"i" long:"ignore-case" description:"ignore case distinctions"`
+		After      int  `short:"A" long:"after" description:"print NUM lines of trailing context" default:"0"`
+	}
+
+	// Parse args using go-flags to satisfy the requirement to use a CLI args library.
+	parser := flags.NewParser(&opts, flags.IgnoreUnknown)
+	remaining, err := parser.ParseArgs(args)
+	if err != nil {
+		// write parser error to stderr and return non-zero exit
+		_, _ = io.WriteString(stderr, "grep: "+err.Error()+"\n")
+		return 2, err
+	}
+
+	if len(remaining) == 0 {
+		_, _ = io.WriteString(stderr, "grep: missing search pattern\n")
+		return 2, nil
+	}
+
+	pattern := remaining[0]
+	files := remaining[1:]
+
+	// If -w requested, wrap pattern with word boundaries. Note: \b in Go's regexp follows RE2 semantics.
+	if opts.Word {
+		pattern = `\b` + pattern + `\b`
+	}
+
+	// If case-insensitive, prefix pattern with (?i)
+	if opts.IgnoreCase {
+		pattern = "(?i)" + pattern
+	}
+
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		_, _ = io.WriteString(stderr, "grep: invalid regexp: "+err.Error()+"\n")
+		return 2, err
+	}
+
+	// Helper to process a reader line-by-line and write matching lines to stdout.
+	processReader := func(r io.Reader, name string, prefixWithName bool) error {
+		sc := bufio.NewScanner(r)
+		// default Scanner buffer is usually sufficient for typical lines; this is a simple implementation.
+		afterRem := 0
+		for sc.Scan() {
+			line := sc.Text()
+			matched := re.MatchString(line)
+			if matched {
+				// print this line
+				if prefixWithName {
+					_, _ = io.WriteString(stdout, name+":"+line+"\n")
+				} else {
+					_, _ = io.WriteString(stdout, line+"\n")
+				}
+				afterRem = opts.After
+				continue
+			}
+			// if within trailing context -A, print the line
+			if afterRem > 0 {
+				if prefixWithName {
+					_, _ = io.WriteString(stdout, name+":"+line+"\n")
+				} else {
+					_, _ = io.WriteString(stdout, line+"\n")
+				}
+				afterRem--
+				continue
+			}
+			// otherwise skip
+		}
+		// If scanner experienced an error, report it
+		if err := sc.Err(); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// If files provided, iterate them; otherwise read from stdin
+	if len(files) > 0 {
+		prefix := len(files) > 1
+		for _, fname := range files {
+			// support '-' as stdin
+			if fname == "-" {
+				if err := processReader(stdin, "<stdin>", prefix); err != nil {
+					_, _ = io.WriteString(stderr, "grep: error reading stdin: "+err.Error()+"\n")
+					return 1, err
+				}
+				continue
+			}
+			f, err := os.Open(filepath.Clean(fname))
+			if err != nil {
+				_, _ = io.WriteString(stderr, "grep: "+err.Error()+"\n")
+				// continue to next file (similar to grep behaviour which may report and continue)
+				continue
+			}
+			if err := processReader(f, fname, prefix); err != nil {
+				_ = f.Close()
+				_, _ = io.WriteString(stderr, "grep: error reading "+fname+": "+err.Error()+"\n")
+				return 1, err
+			}
+			_ = f.Close()
+		}
+	} else {
+		// No files: read from stdin
+		if stdin == nil {
+			stdin = os.Stdin
+		}
+		if err := processReader(stdin, "<stdin>", false); err != nil {
+			_, _ = io.WriteString(stderr, "grep: error reading stdin: "+err.Error()+"\n")
+			return 1, err
+		}
+	}
+
 	return 0, nil
 }
